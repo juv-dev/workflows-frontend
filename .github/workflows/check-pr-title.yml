@@ -1,0 +1,26 @@
+name: Check PR Title
+
+on:
+  workflow_call:
+
+jobs:
+  validate-pr-title:
+    name: Validate PR Title
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate PR title
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { title } = context.payload.pull_request;
+            console.log('PR title received:', JSON.stringify(title));
+
+            if (!/^\s*(feat|fix)(\([^)]+\))?:/i.test(title)) {
+              core.setFailed(
+                "❌ PR title must start with 'feat:' or 'fix:' " +
+                "(e.g., 'feat: something', 'fix: something', 'feat(section): something')"
+              );
+            } else {
+              console.log('✅ PR title is valid');
+            }

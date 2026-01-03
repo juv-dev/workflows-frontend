@@ -1,0 +1,31 @@
+name: Reusable Validate Target Branch
+
+on:
+  workflow_call:
+    inputs:
+      allowed_branches:
+        required: false
+        type: string
+        default: "main,develop"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate target branch
+        run: |
+          echo "Base ref: ${{ github.base_ref }}"
+          echo "Allowed: ${{ inputs.allowed_branches }}"
+
+          IFS=',' read -ra BRANCHES <<< "${{ inputs.allowed_branches }}"
+
+          for branch in "${BRANCHES[@]}"; do
+            if [[ "${{ github.base_ref }}" == "$branch" ]]; then
+              echo "✅ Valid target branch"
+              exit 0
+            fi
+          done
+
+          echo "❌ PR must target one of: ${{ inputs.allowed_branches }}"
+          exit 1

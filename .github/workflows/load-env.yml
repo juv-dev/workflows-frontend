@@ -1,0 +1,55 @@
+name: Load Values
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "Target environment (production | development)"
+        required: true
+        type: string
+
+jobs:
+  load-env:
+    name: Load Environment
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          echo "Estructura del proyecto:"
+          ls -la
+
+          mkdir -p config
+          echo "Carpeta config creada"
+
+          echo "Buscando archivos .env..."
+          ls -la .env* 2>/dev/null || echo "No se encontraron archivos .env"
+
+          if [ "${{ inputs.environment }}" = "production" ]; then
+            echo "Configurando para producción"
+            if [ -f ".env.production" ]; then
+              cp .env.production config/.env
+              echo "Archivo .env.production copiado"
+            else
+              touch config/.env
+              echo "Se creó archivo .env vacío (producción)"
+            fi
+          else
+            echo "Configurando para desarrollo"
+            if [ -f ".env.development" ]; then
+              cp .env.development config/.env
+              echo "Archivo .env.development copiado"
+            else
+              touch config/.env
+              echo "Se creó archivo .env vacío (desarrollo)"
+            fi
+          fi
+
+          echo -e "\nContenido de config/.env:"
+          grep -v '^#' config/.env || echo "El archivo está vacío"
+
+          echo -e "\nVerificando archivo:"
+          ls -la config/
