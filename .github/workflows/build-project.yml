@@ -1,0 +1,49 @@
+name: Build Project
+
+on:
+  workflow_call:
+    inputs:
+      node_version:
+        type: string
+        default: '20'
+      create_env:
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build application
+        run: |
+          if [ "${{ inputs.create_env }}" = "true" ] && [ ! -f ".env" ]; then
+            echo "VITE_APP_TITLE=My App" > .env
+            echo "VITE_APP_VERSION=1.0.0" >> .env
+            echo "VITE_APP_DEBUG=false" >> .env
+          fi
+
+          pnpm run build
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            **/dist/**
+            !**/*.map
