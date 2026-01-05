@@ -1,7 +1,6 @@
+name: Call PR version bump
 on:
-  workflow_call:
-    # No inputs obligatorios; el workflow lee el contexto del repositorio/PR del repo que lo llama.
-    inputs: {}
+  workflow_call: {}
 
 jobs:
   bump-version:
@@ -9,13 +8,22 @@ jobs:
     permissions:
       contents: write
 
+    outputs:
+      new_version: ${{ steps.update.outputs.new_version || '' }}
+
     steps:
+      - name: Validate we were called from a PR context
+        run: |
+          if [ -z "${{ toJson(github.event.pull_request) }}" ] || [ "${{ github.event.pull_request }}" = "null" ]; then
+            echo "This reusable workflow must be called from a workflow triggered by pull_request."
+            exit 1
+          fi
+
       - name: Check if PR is from the same repo (skip forks)
         id: repo_check
         uses: actions/github-script@v7
         with:
           script: |
-            // En workflows reutilizables, context se refiere al repo que llama.
             const headRepo = context.payload.pull_request?.head?.repo?.full_name || '';
             const baseRepo = context.repo.owner + '/' + context.repo.repo;
             return (headRepo === baseRepo).toString();
@@ -23,12 +31,14 @@ jobs:
       - name: Stop for forked PRs
         if: steps.repo_check.outputs.result != 'true'
         run: |
-          echo "PR comes from a forked repo — this workflow cannot push to fork branches. Skipping."
+          echo "PR comes from a fork — this workflow cannot push to fork branches. Skipping."
 
-      - name: Checkout PR branch
+      - name: Checkout PR branch (HEAD of the PR)
         if: steps.repo_check.outputs.result == 'true'
         uses: actions/checkout@v4
         with:
+          # IMPORTANT: checkout the PR head ref so pushes update the same branch
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
           persist-credentials: true
 
@@ -114,6 +124,7 @@ jobs:
             exit 0
           fi
 
+          # Update package.json preserving formatting
           node -e "const fs=require('fs');const p=require('./package.json');p.version='$NEW';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
 
           git config user.name "github-actions[bot]"
@@ -122,8 +133,9 @@ jobs:
           git add package.json
           git commit -m "feat(main): bump version to v$NEW [skip ci]"
 
-          # push back to the PR branch (uses persisted credentials from the caller workflow)
-          git push --set-upstream origin HEAD
+          # Push explicitly to the PR head ref so the same PR branch is updated
+          PR_HEAD_REF="${{ github.event.pull_request.head.ref }}"
+          git push origin "HEAD:${PR_HEAD_REF}"
 
           echo "new_version=$NEW" >> $GITHUB_OUTPUT
 
