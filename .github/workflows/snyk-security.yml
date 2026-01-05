@@ -1,3 +1,4 @@
+# Snyk Security Scan - reusable workflow (workflow_call) — pnpm, auto-detecta workspaces
 name: Snyk Security Scan
 
 on:
@@ -48,9 +49,17 @@ jobs:
             pnpm install
           fi
 
-      - name: Run Snyk test via pnpm dlx
+      - name: Run Snyk test via pnpm dlx (auto add --all-projects for workspace)
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
-          pnpm dlx snyk@latest test --severity-threshold=${{ inputs.severity }}
+          # Añade --all-projects si detecta workspace + lockfile
+          EXTRA_FLAGS=""
+          if [ -f pnpm-lock.yaml ] && [ -f pnpm-workspace.yaml ]; then
+            echo "Detected pnpm workspace + lockfile — adding --all-projects"
+            EXTRA_FLAGS="--all-projects"
+          fi
+
+          # Ejecuta Snyk (puedes pinnear la versión cambiando snyk@latest por snyk@1.1301.2 u otra)
+          pnpm dlx snyk@latest test --severity-threshold=${{ inputs.severity }} $EXTRA_FLAGS
         continue-on-error: true
