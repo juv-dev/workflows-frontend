@@ -1,12 +1,19 @@
-name: Security Scan
+name: Snyk Security Scan
 
 on:
-  pull_request:
-    branches: [main, develop]
-    types: [opened, synchronize, reopened]
-  push:
-    branches: [main, develop]
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      node-version:
+        required: false
+        type: string
+        default: '20'
+      severity:
+        required: false
+        type: string
+        default: 'high'
+    secrets:
+      SNYK_TOKEN:
+        required: true
 
 jobs:
   security:
@@ -18,13 +25,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ inputs.node-version }}
 
       - name: Run Snyk scan
         uses: snyk/actions/node@v3
         with:
           command: test
-          args: --severity-threshold=high
+          args: --severity-threshold=${{ inputs.severity }}
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         continue-on-error: true
