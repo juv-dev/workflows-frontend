@@ -27,11 +27,30 @@ jobs:
         with:
           node-version: ${{ inputs.node-version }}
 
-      - name: Run Snyk scan
-        uses: snyk/actions/node@v3
+      - name: Enable Corepack and prepare pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@latest --activate
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
         with:
-          command: test
-          args: --severity-threshold=${{ inputs.severity }}
+          path: ~/.pnpm-store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies (pnpm)
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            pnpm install --frozen-lockfile
+          else
+            pnpm install
+          fi
+
+      - name: Run Snyk test via pnpm dlx
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          pnpm dlx snyk@latest test --severity-threshold=${{ inputs.severity }}
         continue-on-error: true
