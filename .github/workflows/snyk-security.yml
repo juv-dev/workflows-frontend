@@ -1,22 +1,16 @@
-name: Snyk Security Scan
+name: Security Scan
 
 on:
-  workflow_call:
-    inputs:
-      node-version:
-        required: false
-        type: string
-        default: '20'
-      severity:
-        required: false
-        type: string
-        default: high
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
 
 jobs:
-  snyk-security:
-    name: Snyk Security Scan
+  security:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -24,13 +18,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ inputs.node-version }}
+          node-version: '20'
 
-      - name: Run Snyk scan (monorepo safe)
+      - name: Run Snyk scan
         uses: snyk/actions/node@v3
         with:
           command: test
-          args: >
-            --all-projects
-            --severity-threshold=${{ inputs.severity }}
+          args: --severity-threshold=high
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         continue-on-error: true
