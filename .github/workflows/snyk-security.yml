@@ -28,7 +28,7 @@ jobs:
           node-version: ${{ inputs.node-version }}
 
       - name: Run Snyk scan
-        uses: snyk/actions/node@v3
+        uses: snyk/actions/node@v4
         with:
           command: test
           args: --severity-threshold=${{ inputs.severity }}
