@@ -1,156 +1,118 @@
 name: Call PR version bump
+
 on:
-  workflow_call: {}
+  workflow_call:
+    secrets:
+      GITHUB_TOKEN:
+        required: true
 
 jobs:
   bump-version:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
-    outputs:
-      new_version: ${{ steps.update.outputs.new_version || '' }}
+      pull-requests: write
 
     steps:
-      - name: Validate we were called from a PR context
+      - name: Ensure PR context
         run: |
-          if [ -z "${{ toJson(github.event.pull_request) }}" ] || [ "${{ github.event.pull_request }}" = "null" ]; then
-            echo "This reusable workflow must be called from a workflow triggered by pull_request."
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "This workflow must be called from a pull_request context"
             exit 1
           fi
 
-      - name: Check if PR is from the same repo (skip forks)
-        id: repo_check
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const headRepo = context.payload.pull_request?.head?.repo?.full_name || '';
-            const baseRepo = context.repo.owner + '/' + context.repo.repo;
-            return (headRepo === baseRepo).toString();
-
-      - name: Stop for forked PRs
-        if: steps.repo_check.outputs.result != 'true'
-        run: |
-          echo "PR comes from a fork — this workflow cannot push to fork branches. Skipping."
-
-      - name: Checkout PR branch (HEAD of the PR)
-        if: steps.repo_check.outputs.result == 'true'
+      - name: Checkout PR head
         uses: actions/checkout@v4
         with:
-          # IMPORTANT: checkout the PR head ref so pushes update the same branch
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
           persist-credentials: true
 
       - name: Setup Node.js
-        if: steps.repo_check.outputs.result == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Determine bump type from PR commits (feat -> minor, fix -> patch)
-        if: steps.repo_check.outputs.result == 'true'
+      - name: Determine bump type from PR commits
         id: bump
         uses: actions/github-script@v7
         with:
           script: |
-            const prNumber = context.payload.pull_request?.number;
-            if (!prNumber) return 'none';
+            const pr = context.payload.pull_request;
             const { data: commits } = await github.rest.pulls.listCommits({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: prNumber
+              pull_number: pr.number
             });
-            const hasFeat = commits.some(c => {
-              const m = c.commit && c.commit.message ? c.commit.message : '';
-              return /^feat(\(|:|\b)/i.test(m);
-            });
-            const hasFix = commits.some(c => {
-              const m = c.commit && c.commit.message ? c.commit.message : '';
-              return /^fix(\(|:|\b)/i.test(m);
-            });
-            if (hasFeat) return 'minor';
-            if (hasFix) return 'patch';
-            return 'none';
 
-      - name: Exit if no bump needed
-        if: steps.repo_check.outputs.result == 'true' && steps.bump.outputs.result == 'none'
-        run: |
-          echo "No feat or fix commits in PR — no version bump required."
+            let bump = 'none';
 
-      - name: Avoid loop: skip if last commit is the bot bump commit
-        if: steps.repo_check.outputs.result == 'true' && steps.bump.outputs.result != 'none'
+            for (const c of commits) {
+              const msg = c.commit.message;
+
+              if (msg.includes('BREAKING CHANGE') || /^feat!/.test(msg)) {
+                bump = 'major';
+                break;
+              }
+
+              if (/^feat(\(|:|\b)/.test(msg)) bump = 'minor';
+              else if (/^fix(\(|:|\b)/.test(msg) && bump !== 'minor') bump = 'patch';
+            }
+
+            core.setOutput('type', bump);
+
+      - name: Stop if no bump needed
+        if: steps.bump.outputs.type == 'none'
+        run: echo "No version bump required"
+
+      - name: Avoid infinite loop
+        if: steps.bump.outputs.type != 'none'
         run: |
-          LAST_AUTHOR_EMAIL=$(git --no-pager log -1 --pretty=format:'%ae' || echo "")
-          echo "last author: $LAST_AUTHOR_EMAIL"
-          if [ "$LAST_AUTHOR_EMAIL" = "41898282+github-actions[bot]@users.noreply.github.com" ]; then
-            echo "Last commit authored by the actions bot — likely our previous bump. Skipping to avoid loop."
+          LAST_AUTHOR=$(git log -1 --pretty=format:'%ae')
+          if [ "$LAST_AUTHOR" = "41898282+github-actions[bot]@users.noreply.github.com" ]; then
+            echo "Last commit was made by the bot. Skipping."
             exit 0
           fi
 
-      - name: Compute new version and update package.json
-        if: steps.repo_check.outputs.result == 'true' && steps.bump.outputs.result != 'none'
-        id: update
+      - name: Bump version in package.json
+        if: steps.bump.outputs.type != 'none'
         run: |
-          set -euo pipefail
-          BUMP="${{ steps.bump.outputs.result }}"
-          echo "Bump type: $BUMP"
-
-          if [ ! -f package.json ]; then
-            echo "package.json not found — cannot bump version."
-            echo "new_version=" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
+          set -e
+          BUMP=${{ steps.bump.outputs.type }}
           CURRENT=$(node -p "require('./package.json').version")
-          echo "Current version: $CURRENT"
 
           IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
-          MAJOR=${MAJOR:-0}; MINOR=${MINOR:-0}; PATCH=${PATCH:-0}
 
-          if [ "$BUMP" = "minor" ]; then
-            MINOR=$((MINOR + 1))
-            PATCH=0
-          else
-            PATCH=$((PATCH + 1))
-          fi
+          case "$BUMP" in
+            major) MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR+1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH+1)) ;;
+          esac
 
           NEW="$MAJOR.$MINOR.$PATCH"
-          echo "New version: $NEW"
+          node -e "
+            const fs=require('fs');
+            const p=require('./package.json');
+            p.version='$NEW';
+            fs.writeFileSync('package.json', JSON.stringify(p,null,2)+'\n');
+          "
 
-          if [ "$NEW" = "$CURRENT" ]; then
-            echo "package.json already has version $NEW — nothing to do."
-            echo "new_version=$NEW" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # Update package.json preserving formatting
-          node -e "const fs=require('fs');const p=require('./package.json');p.version='$NEW';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add package.json
-          git commit -m "feat(main): bump version to v$NEW [skip ci]"
+          git commit -m \"feat(main): bump version to v$NEW\"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
 
-          # Push explicitly to the PR head ref so the same PR branch is updated
-          PR_HEAD_REF="${{ github.event.pull_request.head.ref }}"
-          git push origin "HEAD:${PR_HEAD_REF}"
+          echo "NEW_VERSION=$NEW" >> $GITHUB_ENV
 
-          echo "new_version=$NEW" >> $GITHUB_OUTPUT
-
-      - name: Comment PR about bump
-        if: steps.repo_check.outputs.result == 'true' && steps.update.outputs.new_version
+      - name: Comment PR
+        if: env.NEW_VERSION
         uses: actions/github-script@v7
         with:
           script: |
-            const v = `${{ steps.update.outputs.new_version }}`;
-            const pr = context.payload.pull_request?.number;
-            if (pr) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: pr,
-                body: `Auto bumped package.json version to ${v} (based on commits in this PR).`
-              });
-            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: `🚀 Version bumped automatically to **${process.env.NEW_VERSION}**`
+            });
