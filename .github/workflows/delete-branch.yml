@@ -2,7 +2,7 @@ name: Delete Branch After Tag
 
 on:
   workflow_run:
-    workflows: ["Tag on merge"]
+    workflows: ["Create Tag"]
     types: [completed]
   repository_dispatch:
     types: [delete_branch]
