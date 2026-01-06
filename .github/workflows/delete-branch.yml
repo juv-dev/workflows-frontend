@@ -2,18 +2,24 @@ name: Delete Branch After Tag
 
 on:
   workflow_run:
-    workflows: ["Tag on merge"]  # Nombre del workflow de create-tag
+    workflows: ["Tag on merge"]
     types: [completed]
+  repository_dispatch:
+    types: [delete_branch]
 
 jobs:
   delete-branch:
     if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.event.pull_request.merged == true
+      (github.event_name == 'workflow_run' && 
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.event.pull_request.merged == true) ||
+      (github.event_name == 'repository_dispatch' && 
+       github.event.action == 'delete_branch')
     runs-on: ubuntu-latest
     steps:
-      - name: Obtener información del PR
+      - name: Get PR information
+        if: github.event_name == 'workflow_run'
         id: pr_info
         uses: actions/github-script@v6
         with:
@@ -24,11 +30,11 @@ jobs:
               pull_number: context.payload.workflow_run.event.pull_request.number
             });
             return {
-              branch: pr.head.ref,
-              merged: pr.merged
+              branch: pr.head.ref
             };
-      - name: Eliminar rama
+      
+      - name: Delete branch
         uses: dawidd6/action-delete-branch@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          branches: ${{ steps.pr_info.outputs.branch }}
+          branches: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.branch || steps.pr_info.outputs.branch }}
