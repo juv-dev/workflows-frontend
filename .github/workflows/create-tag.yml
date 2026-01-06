@@ -1,4 +1,4 @@
-name: Tag on merge
+name: Create Tag
 
 on:
   workflow_call:
@@ -37,6 +37,12 @@ jobs:
         with:
           node-version: '20'
           cache: 'pnpm'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8
+          run_install: true
 
       - name: Ensure package.json exists and read version
         id: read_version
