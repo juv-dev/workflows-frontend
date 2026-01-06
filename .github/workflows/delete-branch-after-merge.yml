@@ -1,8 +1,14 @@
 name: Delete Branch After Merge
 
 on:
-  pull_request:
-    types: [closed]
+  workflow_call:
+    inputs:
+      branch_name:
+        required: true
+        type: string
+    secrets:
+      GITHUB_TOKEN:
+        required: true
 
 jobs:
   delete-merged-branch:
@@ -14,4 +20,4 @@ jobs:
         uses: dawidd6/action-delete-branch@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          branches: ${{ github.event.pull_request.head.ref }}
+          branches: ${{ inputs.branch_name }}
