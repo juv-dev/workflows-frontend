@@ -64,7 +64,6 @@ jobs:
 
       - name: Fetch all git history and tags
         run: |
-          git fetch --unshallow
           git fetch --tags
 
       - name: Check if tag exists
