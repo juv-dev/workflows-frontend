@@ -1,0 +1,34 @@
+name: Delete Branch After Tag
+
+on:
+  workflow_run:
+    workflows: ["Tag on merge"]  # Nombre del workflow de create-tag
+    types: [completed]
+
+jobs:
+  delete-branch:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Obtener información del PR
+        id: pr_info
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.workflow_run.event.pull_request.number
+            });
+            return {
+              branch: pr.head.ref,
+              merged: pr.merged
+            };
+      - name: Eliminar rama
+        uses: dawidd6/action-delete-branch@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branches: ${{ steps.pr_info.outputs.branch }}

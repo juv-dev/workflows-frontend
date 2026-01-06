@@ -2,6 +2,9 @@ name: Call PR version bump
 
 on:
   workflow_call:
+    secrets:
+      GITHUB_TOKEN:
+        required: true
 
 jobs:
   bump-version:
@@ -9,7 +12,6 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-
     steps:
       - name: Ensure PR context
         run: |
