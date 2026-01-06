@@ -1,9 +1,14 @@
 name: Tag on merge (from package.json)
 
 on:
-  pull_request:
-    types: [closed]
-    branches: [main]
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+    secrets:
+      GITHUB_TOKEN:
+        required: true
 
 jobs:
   tag-version:
@@ -16,11 +21,11 @@ jobs:
       tag: ${{ steps.create_tag.outputs.tag || '' }}
 
     steps:
-      - name: Checkout merge commit
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          ref: ${{ inputs.ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node
