@@ -1,4 +1,3 @@
-# Create tag from package.json version after PR merge (validates version > last tag)
 name: Tag on merge (from package.json)
 
 on:
