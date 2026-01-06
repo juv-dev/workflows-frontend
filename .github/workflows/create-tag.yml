@@ -7,9 +7,9 @@ on:
         required: true
         type: string
     secrets:
-      repo_token:
+      repo_token:  # Correcto, ya está como `repo_token`
         required: true
-
+		
 jobs:
   tag-version:
     if: github.event.pull_request.merged == true
