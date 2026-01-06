@@ -7,7 +7,7 @@ on:
         required: true
         type: string
     secrets:
-      GITHUB_TOKEN:
+      repo_token:
         required: true
 
 jobs:
@@ -26,7 +26,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ inputs.ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.repo_token }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
