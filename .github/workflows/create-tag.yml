@@ -7,12 +7,11 @@ on:
         required: true
         type: string
     secrets:
-      repo_token:  # Correcto, ya está como `repo_token`
+      repo_token:
         required: true
-		
+
 jobs:
   tag-version:
-    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -28,10 +27,16 @@ jobs:
           ref: ${{ inputs.ref }}
           token: ${{ secrets.repo_token }}
 
+      - name: Configure Git user
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
 
       - name: Ensure package.json exists and read version
         id: read_version
@@ -51,68 +56,49 @@ jobs:
           echo "package.json not found in the merge commit — nothing to tag."
           exit 0
 
-      - name: Fetch remote tags
+      - name: Fetch all git history and tags
         run: |
-          git fetch --tags --quiet
+          git fetch --unshallow
+          git fetch --tags
 
-      - name: Check remote for existing tag matching package.json version
+      - name: Check if tag exists
         id: check_tag
         run: |
-          set -euo pipefail
           VERSION="${{ steps.read_version.outputs.version }}"
-          if git ls-remote --tags origin | grep -q "refs/tags/v${VERSION}$"; then
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null || \
+             git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
             echo "exists=true" >> $GITHUB_OUTPUT
           else
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Get last remote tag (or v0.0.0)
+      - name: Get last tag
         id: last_tag
         run: |
-          set -euo pipefail
-          # Ensure tags are fetched (already done), then list and sort by semver-aware refname
-          LAST=$(git tag --list 'v*' --sort=-v:refname | head -n1 || true)
-          if [ -z "$LAST" ]; then LAST="v0.0.0"; fi
-          echo "last_tag=$LAST" >> $GITHUB_OUTPUT
+          LAST_TAG=$(git describe --tags --abbrev=0 --match "v*" 2>/dev/null || echo "v0.0.0")
+          echo "last_tag=$LAST_TAG" >> $GITHUB_OUTPUT
 
-      - name: Validate version is greater than last tag and create tag
+      - name: Create and push tag if version is greater
         id: create_tag
         if: steps.check_tag.outputs.exists == 'false'
         run: |
-          set -euo pipefail
           VERSION="${{ steps.read_version.outputs.version }}"
-          LAST="${{ steps.last_tag.outputs.last_tag }}"
-
-          echo "Package.json version: $VERSION"
-          echo "Last remote tag: $LAST"
-
-          # Parse semver components
-          parse() {
-            v="${1#v}"
-            IFS='.' read -r a b c <<< "$v"
-            echo "${a:-0} ${b:-0} ${c:-0}"
-          }
-          read -r A B C <<< "$(parse "$VERSION")"
-          read -r LA LB LC <<< "$(parse "$LAST")"
-
-          greater=false
-          if [ "$A" -gt "$LA" ]; then
-            greater=true
-          elif [ "$A" -eq "$LA" ] && [ "$B" -gt "$LB" ]; then
-            greater=true
-          elif [ "$A" -eq "$LA" ] && [ "$B" -eq "$LB" ] && [ "$C" -gt "$LC" ]; then
-            greater=true
-          fi
-
-          if [ "$greater" != "true" ]; then
-            echo "package.json version ($VERSION) is NOT greater than last tag ($LAST). Skipping tag creation."
+          LAST_TAG="${{ steps.last_tag.outputs.last_tag }}"
+          
+          # Remove 'v' prefix for comparison
+          VERSION_NUM=${VERSION#v}
+          LAST_TAG_NUM=${LAST_TAG#v}
+          
+          # Compare versions
+          if [ "$(printf '%s\n' "$VERSION_NUM" "$LAST_TAG_NUM" | sort -V | head -n1)" = "$VERSION_NUM" ] && [ "$VERSION_NUM" != "$LAST_TAG_NUM" ]; then
+            echo "Version $VERSION is not greater than last tag $LAST_TAG. Skipping tag creation."
             echo "tag=" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          TAG="v${VERSION}"
-          # Create an annotated tag and push it
-          git tag -a "$TAG" -m "release: $TAG"
+          # Create and push tag
+          TAG="v$VERSION"
+          git tag -a "$TAG" -m "Release $TAG"
           git push origin "$TAG"
           echo "Created and pushed tag $TAG"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
