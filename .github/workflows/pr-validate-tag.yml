@@ -1,0 +1,28 @@
+name: PR / validate-tag
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-tag:
+    name: validate-tag
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag does not exist
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v$VERSION"
+          echo "Checking tag: $TAG"
+          if git tag --list "$TAG" | grep -q "$TAG"; then
+            echo "::error::Tag $TAG already exists. Bump the version in package.json before merging."
+            exit 1
+          fi
+          echo "Tag $TAG is available."
