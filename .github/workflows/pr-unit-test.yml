@@ -1,0 +1,76 @@
+name: PR / unit-test
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: '20'
+      coverage-path:
+        type: string
+        default: 'coverage/'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  unit-test:
+    name: unit-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run tests with coverage
+        run: pnpm run test:coverage
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: ${{ inputs.coverage-path }}
+          retention-days: 7
+
+      - name: Coverage summary comment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body = '## Test Results\n\n';
+            try {
+              const summary = JSON.parse(fs.readFileSync('coverage/coverage-summary.json', 'utf8'));
+              const t = summary.total;
+              body += '| Metric | Coverage |\n|--------|----------|\n';
+              body += `| Lines | ${t.lines.pct}% |\n`;
+              body += `| Functions | ${t.functions.pct}% |\n`;
+              body += `| Branches | ${t.branches.pct}% |\n`;
+              body += `| Statements | ${t.statements.pct}% |\n`;
+              body += `\nThreshold: **80%** on all metrics`;
+            } catch {
+              body += 'Coverage summary not available.';
+            }
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body?.startsWith('## Test Results'));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body });
+            }

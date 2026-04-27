@@ -1,0 +1,47 @@
+name: PR / load-values
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: '20'
+    outputs:
+      version:
+        value: ${{ jobs.load-values.outputs.version }}
+      name:
+        value: ${{ jobs.load-values.outputs.name }}
+
+permissions:
+  contents: read
+
+jobs:
+  load-values:
+    name: load-values
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.values.outputs.version }}
+      name: ${{ steps.values.outputs.name }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Load project values
+        id: values
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          NAME=$(node -p "require('./package.json').name")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "Project: $NAME v$VERSION"
