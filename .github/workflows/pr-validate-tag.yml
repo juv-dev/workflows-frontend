@@ -1,4 +1,4 @@
-name: PR / validate-tag
+name: Frontend / Validate Tag
 
 on:
   workflow_call:
