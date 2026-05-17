@@ -1,4 +1,4 @@
-name: Frontend / Security Review
+name: Workflow Security Scan
 
 on:
   workflow_call:

@@ -1,4 +1,4 @@
-name: Frontend / Load Values
+name: Workflow PR Load Values
 
 on:
   workflow_call:
