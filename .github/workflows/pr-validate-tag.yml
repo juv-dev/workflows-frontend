@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -21,7 +21,7 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           TAG="v$VERSION"
           echo "Checking tag: $TAG"
-          if git tag --list "$TAG" | grep -q "$TAG"; then
+          if git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1; then
             echo "::error::Tag $TAG already exists. Bump the version in package.json before merging."
             exit 1
           fi
