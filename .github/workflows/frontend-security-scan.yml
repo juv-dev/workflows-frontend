@@ -2,26 +2,155 @@ name: Workflow Security Scan
 
 on:
   workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: '24'
+      pnpm-version:
+        type: string
+        default: '11.1.2'
+      jscpd-threshold:
+        type: string
+        default: '5'
+      type-coverage-min:
+        type: string
+        default: '95'
+      allowed-licenses:
+        type: string
+        default: 'MIT;ISC;Apache-2.0;BSD-2-Clause;BSD-3-Clause;CC-BY-4.0;CC0-1.0;Unlicense;0BSD;Python-2.0;BlueOak-1.0.0'
 
 permissions:
-  actions: read
   contents: read
-  security-events: write
 
 jobs:
-  analyze:
+  codeql:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
-
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v6
-
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
           languages: javascript-typescript
-
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
         with:
           category: "/language:javascript-typescript"
+
+  vulnerabilities:
+    name: Dependency Vulnerabilities
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run OSV-Scanner
+        uses: google/osv-scanner-action/osv-scanner-action@v2.0.1
+        with:
+          scan-args: |-
+            --lockfile=pnpm-lock.yaml
+            --recursive
+            ./
+
+  secrets:
+    name: Secret Scanning
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
+
+  licenses:
+    name: License Compliance
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm-version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Check allowed licenses
+        run: |
+          npx license-checker \
+            --production \
+            --onlyAllow "${{ inputs.allowed-licenses }}" \
+            --excludePrivatePackages \
+            --summary
+
+  duplicates:
+    name: Code Duplication
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+      - name: Detect duplicated code
+        run: |
+          npx jscpd src/ \
+            --threshold ${{ inputs.jscpd-threshold }} \
+            --min-tokens 50 \
+            --reporters consoleFull \
+            --ignore "**/*.spec.ts,**/*.test.ts"
+
+  unused:
+    name: Unused Dependencies
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm-version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Detect unused deps and exports
+        run: npx knip --no-progress
+
+  type-coverage:
+    name: Type Coverage
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm-version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Check type coverage
+        run: npx type-coverage --at-least ${{ inputs.type-coverage-min }} --strict
