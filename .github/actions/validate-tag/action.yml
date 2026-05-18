@@ -1,0 +1,21 @@
+name: 'Validate Tag'
+description: 'Validates that the package.json version is not already tagged in git'
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Validate tag does not exist
+      shell: bash
+      run: |
+        VERSION=$(node -p "require('./package.json').version")
+        TAG="v$VERSION"
+        echo "Checking tag: $TAG"
+        if git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1; then
+          echo "::error::Tag $TAG already exists. Bump the version in package.json before merging."
+          exit 1
+        fi
+        echo "Tag $TAG is available."
