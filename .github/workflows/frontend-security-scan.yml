@@ -53,6 +53,7 @@ jobs:
         with:
           scan-args: |-
             --lockfile=pnpm-lock.yaml
+            --config=osv-scanner.toml
             --recursive
             ./
 
