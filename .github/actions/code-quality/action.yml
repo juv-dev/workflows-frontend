@@ -1,0 +1,55 @@
+name: 'Code Quality'
+description: 'Quality checks: duplicated code, unused dependencies and type coverage — runs sequentially, fails fast'
+
+inputs:
+  node-version:
+    description: 'Node.js version'
+    required: false
+    default: '24'
+  pnpm-version:
+    description: 'pnpm version'
+    required: false
+    default: '11.1.2'
+  jscpd-threshold:
+    description: 'Max allowed percentage of duplicated code'
+    required: false
+    default: '5'
+  type-coverage-min:
+    description: 'Minimum percentage of typed code required'
+    required: false
+    default: '95'
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v6
+
+    - uses: pnpm/action-setup@v4
+      with:
+        version: ${{ inputs.pnpm-version }}
+        run_install: false
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: pnpm
+
+    - shell: bash
+      run: pnpm install --frozen-lockfile
+
+    - name: Detect duplicated code
+      shell: bash
+      run: |
+        npx jscpd src/ \
+          --threshold ${{ inputs.jscpd-threshold }} \
+          --min-tokens 50 \
+          --reporters consoleFull \
+          --ignore "**/*.spec.ts,**/*.test.ts"
+
+    - name: Detect unused deps and exports
+      shell: bash
+      run: npx knip --no-progress
+
+    - name: Check type coverage
+      shell: bash
+      run: npx type-coverage --at-least ${{ inputs.type-coverage-min }} --strict

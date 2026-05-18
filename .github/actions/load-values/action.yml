@@ -1,0 +1,48 @@
+name: 'Load Values'
+description: 'Installs deps and exposes package.json values as outputs'
+
+inputs:
+  node-version:
+    description: 'Node.js version'
+    required: false
+    default: '24'
+  pnpm-version:
+    description: 'pnpm version'
+    required: false
+    default: '11.1.2'
+
+outputs:
+  version:
+    description: 'Project version from package.json'
+    value: ${{ steps.values.outputs.version }}
+  name:
+    description: 'Project name from package.json'
+    value: ${{ steps.values.outputs.name }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v6
+
+    - uses: pnpm/action-setup@v4
+      with:
+        version: ${{ inputs.pnpm-version }}
+        run_install: false
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: pnpm
+
+    - shell: bash
+      run: pnpm install --frozen-lockfile
+
+    - name: Load project values
+      id: values
+      shell: bash
+      run: |
+        VERSION=$(node -p "require('./package.json').version")
+        NAME=$(node -p "require('./package.json').name")
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "name=$NAME" >> "$GITHUB_OUTPUT"
+        echo "Project: $NAME v$VERSION"
