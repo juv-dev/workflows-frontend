@@ -1,0 +1,151 @@
+name: 'Supply Chain Hardening'
+description: 'Runs pnpm audit and validates .npmrc and pnpm-workspace.yaml hardening flags against post-2024 supply chain attack vectors'
+
+inputs:
+  node-version:
+    description: 'Node.js version'
+    required: false
+    default: '24'
+  pnpm-version:
+    description: 'pnpm version'
+    required: false
+    default: '11.1.2'
+  minimum-release-age:
+    description: 'Minimum required value for pnpm-workspace.yaml minimumReleaseAge (in minutes)'
+    required: false
+    default: '4320'
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v6
+
+    - uses: pnpm/action-setup@v4
+      with:
+        version: ${{ inputs.pnpm-version }}
+        run_install: false
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: pnpm
+
+    - name: Run pnpm audit
+      id: audit
+      continue-on-error: true
+      shell: bash
+      run: pnpm audit --audit-level high
+
+    - name: Summarize pnpm audit result
+      if: always() && steps.audit.outcome == 'failure'
+      shell: bash
+      run: |
+        {
+          echo "## pnpm audit — vulnerabilidades de alta severidad detectadas"
+          echo ""
+          echo "Mira el step **Run pnpm audit** arriba para ver el listado completo."
+          echo ""
+          echo "### Cómo arreglar"
+          echo "1. **Si la dep es directa:** actualizar versión en \`package.json\`."
+          echo "2. **Si es transitiva:** agregar override en \`pnpm-workspace.yaml\`:"
+          echo '   ```yaml'
+          echo '   overrides:'
+          echo '     <paquete>: "<version-segura-exacta>"'
+          echo '   ```'
+          echo "3. \`pnpm install --lockfile-only\` y commitear el lockfile."
+        } >> $GITHUB_STEP_SUMMARY
+        exit 1
+
+    - name: Verify .npmrc has no committed credentials
+      id: npmrc
+      continue-on-error: true
+      shell: bash
+      run: |
+        if [ -f .npmrc ]; then
+          if grep -E '_authToken=|_password=' .npmrc > /dev/null; then
+            echo "::error file=.npmrc::.npmrc contains credentials. Move tokens to ~/.npmrc or use CI secrets."
+            exit 1
+          fi
+          echo ".npmrc OK — no committed credentials."
+        else
+          echo "No .npmrc found — OK."
+        fi
+
+    - name: Summarize .npmrc credentials result
+      if: always() && steps.npmrc.outcome == 'failure'
+      shell: bash
+      run: |
+        {
+          echo "## .npmrc tiene credenciales commiteadas"
+          echo ""
+          echo "**Crítico.** Encontré \`_authToken=\` o \`_password=\` en el \`.npmrc\` del repo."
+          echo ""
+          echo "### Cómo arreglar"
+          echo "1. **Rotar los tokens YA** — asumir compromiso."
+          echo "2. Mover los tokens a \`~/.npmrc\` (carpeta home del usuario, fuera del repo)."
+          echo "3. Agregar \`.npmrc\` a \`.gitignore\` si no está."
+          echo "4. Para CI: inyectar tokens desde GitHub Secrets en runtime."
+          echo "5. Limpiar el historial de git con \`git filter-repo\` si los tokens viven ahí también."
+        } >> $GITHUB_STEP_SUMMARY
+        exit 1
+
+    - name: Verify pnpm-workspace.yaml hardening flags
+      id: hardening
+      continue-on-error: true
+      shell: bash
+      env:
+        REQUIRED_AGE: ${{ inputs.minimum-release-age }}
+      run: |
+        if [ ! -f pnpm-workspace.yaml ]; then
+          echo "::warning::No pnpm-workspace.yaml found. Cannot enforce hardening flags."
+          exit 0
+        fi
+
+        fail=0
+
+        age=$(grep -E '^[[:space:]]*minimumReleaseAge[[:space:]]*:' pnpm-workspace.yaml | head -1 | awk -F: '{gsub(/[[:space:]]/,"",$2); print $2}')
+        if [ -z "$age" ] || [ "$age" -lt "$REQUIRED_AGE" ]; then
+          echo "::error file=pnpm-workspace.yaml::minimumReleaseAge must be >= $REQUIRED_AGE. Found: '${age:-missing}'"
+          fail=1
+        fi
+
+        if ! grep -E '^[[:space:]]*blockExoticSubdeps[[:space:]]*:[[:space:]]*true' pnpm-workspace.yaml > /dev/null; then
+          echo "::error file=pnpm-workspace.yaml::blockExoticSubdeps must be set to true."
+          fail=1
+        fi
+
+        if ! grep -E '^[[:space:]]*strictDepBuilds[[:space:]]*:[[:space:]]*true' pnpm-workspace.yaml > /dev/null; then
+          echo "::error file=pnpm-workspace.yaml::strictDepBuilds must be set to true."
+          fail=1
+        fi
+
+        if [ "$fail" -eq 1 ]; then
+          exit 1
+        fi
+        echo "pnpm-workspace.yaml hardening OK."
+
+    - name: Summarize hardening result
+      if: always() && steps.hardening.outcome == 'failure'
+      shell: bash
+      env:
+        REQUIRED_AGE: ${{ inputs.minimum-release-age }}
+      run: |
+        {
+          echo "## pnpm-workspace.yaml — hardening incompleto"
+          echo ""
+          echo "Faltan flags de seguridad para PNPM 11. Mira el step **Verify pnpm-workspace.yaml hardening flags** arriba para ver cuáles."
+          echo ""
+          echo "### Cómo arreglar"
+          echo "Agregar al \`pnpm-workspace.yaml\` (al ROOT, NO bajo \`pnpm:\` namespace):"
+          echo '```yaml'
+          echo "minimumReleaseAge: $REQUIRED_AGE"
+          echo "blockExoticSubdeps: true"
+          echo "strictDepBuilds: true"
+          echo '```'
+          echo ""
+          echo "**Qué hace cada uno:**"
+          echo "- \`minimumReleaseAge\` — no instalar paquetes publicados hace menos de N minutos (cooldown contra supply chain attacks)."
+          echo "- \`blockExoticSubdeps\` — bloquea sub-dependencias con sources raras (git URLs, file paths, etc.)."
+          echo "- \`strictDepBuilds\` — falla si una dep necesita ejecutar scripts de build no aprobados en \`allowBuilds\`."
+        } >> $GITHUB_STEP_SUMMARY
+        exit 1
