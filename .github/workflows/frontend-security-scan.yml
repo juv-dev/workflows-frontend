@@ -23,23 +23,83 @@ permissions:
   contents: read
 
 jobs:
-  codeql:
-    name: CodeQL Analysis
+  bearer:
+    name: Bearer SAST
     runs-on: ubuntu-latest
     permissions:
-      actions: read
       contents: read
-      security-events: write
     steps:
       - uses: actions/checkout@v6
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+      - name: Run Bearer
+        uses: bearer/bearer-action@v2
         with:
-          languages: javascript-typescript
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
+          scanner: sast
+          severity: critical,high
+          diff: ${{ github.event_name == 'pull_request' }}
+
+  supply-chain:
+    name: Supply Chain Hardening
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6.0.5
         with:
-          category: "/language:javascript-typescript"
+          version: ${{ inputs.pnpm-version }}
+          run_install: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'pnpm'
+
+      - name: Run pnpm audit
+        run: pnpm audit --audit-level high
+
+      - name: Verify .npmrc has no committed credentials
+        run: |
+          if [ -f .npmrc ]; then
+            if grep -E '_authToken=|_password=' .npmrc > /dev/null; then
+              echo "::error file=.npmrc::.npmrc contains credentials. Move tokens to ~/.npmrc or use CI secrets."
+              exit 1
+            fi
+            echo ".npmrc OK — no committed credentials."
+          else
+            echo "No .npmrc found — OK."
+          fi
+
+      - name: Verify pnpm-workspace.yaml hardening flags
+        run: |
+          if [ ! -f pnpm-workspace.yaml ]; then
+            echo "::warning::No pnpm-workspace.yaml found. Cannot enforce hardening flags."
+            exit 0
+          fi
+
+          fail=0
+
+          age=$(grep -E '^[[:space:]]*minimumReleaseAge[[:space:]]*:' pnpm-workspace.yaml | head -1 | awk -F: '{gsub(/[[:space:]]/,"",$2); print $2}')
+          if [ -z "$age" ] || [ "$age" -lt 4320 ]; then
+            echo "::error file=pnpm-workspace.yaml::minimumReleaseAge must be >= 4320 (3 days cooldown). Found: '${age:-missing}'"
+            fail=1
+          fi
+
+          if ! grep -E '^[[:space:]]*blockExoticSubdeps[[:space:]]*:[[:space:]]*true' pnpm-workspace.yaml > /dev/null; then
+            echo "::error file=pnpm-workspace.yaml::blockExoticSubdeps must be set to true."
+            fail=1
+          fi
+
+          if ! grep -E '^[[:space:]]*strictDepBuilds[[:space:]]*:[[:space:]]*true' pnpm-workspace.yaml > /dev/null; then
+            echo "::error file=pnpm-workspace.yaml::strictDepBuilds must be set to true."
+            fail=1
+          fi
+
+          if [ "$fail" -eq 1 ]; then
+            exit 1
+          fi
+          echo "pnpm-workspace.yaml hardening OK."
 
   vulnerabilities:
     name: Dependency Vulnerabilities
