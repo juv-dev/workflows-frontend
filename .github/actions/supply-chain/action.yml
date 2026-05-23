@@ -1,0 +1,81 @@
+name: 'Supply Chain Hardening'
+description: 'Runs pnpm audit and validates .npmrc and pnpm-workspace.yaml hardening flags against post-2024 supply chain attack vectors'
+
+inputs:
+  node-version:
+    description: 'Node.js version'
+    required: false
+    default: '24'
+  pnpm-version:
+    description: 'pnpm version'
+    required: false
+    default: '11.1.2'
+  minimum-release-age:
+    description: 'Minimum required value for pnpm-workspace.yaml minimumReleaseAge (in minutes)'
+    required: false
+    default: '4320'
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v6
+
+    - uses: pnpm/action-setup@v4
+      with:
+        version: ${{ inputs.pnpm-version }}
+        run_install: false
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: pnpm
+
+    - name: Run pnpm audit
+      shell: bash
+      run: pnpm audit --audit-level high
+
+    - name: Verify .npmrc has no committed credentials
+      shell: bash
+      run: |
+        if [ -f .npmrc ]; then
+          if grep -E '_authToken=|_password=' .npmrc > /dev/null; then
+            echo "::error file=.npmrc::.npmrc contains credentials. Move tokens to ~/.npmrc or use CI secrets."
+            exit 1
+          fi
+          echo ".npmrc OK — no committed credentials."
+        else
+          echo "No .npmrc found — OK."
+        fi
+
+    - name: Verify pnpm-workspace.yaml hardening flags
+      shell: bash
+      env:
+        REQUIRED_AGE: ${{ inputs.minimum-release-age }}
+      run: |
+        if [ ! -f pnpm-workspace.yaml ]; then
+          echo "::warning::No pnpm-workspace.yaml found. Cannot enforce hardening flags."
+          exit 0
+        fi
+
+        fail=0
+
+        age=$(grep -E '^[[:space:]]*minimumReleaseAge[[:space:]]*:' pnpm-workspace.yaml | head -1 | awk -F: '{gsub(/[[:space:]]/,"",$2); print $2}')
+        if [ -z "$age" ] || [ "$age" -lt "$REQUIRED_AGE" ]; then
+          echo "::error file=pnpm-workspace.yaml::minimumReleaseAge must be >= $REQUIRED_AGE. Found: '${age:-missing}'"
+          fail=1
+        fi
+
+        if ! grep -E '^[[:space:]]*blockExoticSubdeps[[:space:]]*:[[:space:]]*true' pnpm-workspace.yaml > /dev/null; then
+          echo "::error file=pnpm-workspace.yaml::blockExoticSubdeps must be set to true."
+          fail=1
+        fi
+
+        if ! grep -E '^[[:space:]]*strictDepBuilds[[:space:]]*:[[:space:]]*true' pnpm-workspace.yaml > /dev/null; then
+          echo "::error file=pnpm-workspace.yaml::strictDepBuilds must be set to true."
+          fail=1
+        fi
+
+        if [ "$fail" -eq 1 ]; then
+          exit 1
+        fi
+        echo "pnpm-workspace.yaml hardening OK."
