@@ -1,0 +1,40 @@
+name: 'No AI Artifacts'
+description: 'Fails the PR if it adds AI assistant config files that should stay local (.claude/, AGENTS.md, .claudeignore, etc.)'
+
+inputs:
+  base-ref:
+    description: 'Base ref to diff against'
+    required: false
+    default: ${{ github.event.pull_request.base.sha }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Check for AI assistant config files
+      shell: bash
+      env:
+        BASE_REF: ${{ inputs.base-ref }}
+      run: |
+        PATTERN='(^|/)(\.claude/|\.claudeignore$|CLAUDE\.md$|AGENTS\.md$|\.cursor/|\.cursorrules$|\.windsurf/|\.windsurfrules$|\.codex/|\.aider.*$|copilot-instructions\.md$)'
+        ADDED=$(git diff --name-only --diff-filter=A "$BASE_REF"...HEAD | grep -E -i "$PATTERN" || true)
+        if [ -n "$ADDED" ]; then
+          echo "::error::AI assistant config files must not be committed:"
+          echo "$ADDED" | while read -r f; do echo "::error file=$f::AI config file committed"; done
+          {
+            echo "## AI config files detected"
+            echo ""
+            echo "These files are local-only per project policy and must not be committed:"
+            echo ""
+            echo '```'
+            echo "$ADDED"
+            echo '```'
+            echo ""
+            echo "Remove them from the PR and add the pattern to .gitignore if missing."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+        fi
+        echo "No AI assistant config files found in this PR."

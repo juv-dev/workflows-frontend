@@ -1,0 +1,14 @@
+name: Workflow PR No AI Artifacts
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  no-ai-artifacts:
+    name: no-ai-artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: juv-dev/workflows-frontend/.github/actions/no-ai-artifacts@main
