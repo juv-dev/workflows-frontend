@@ -80,6 +80,7 @@ jobs:
 | `unit-test` | Corre tests con cobertura, comenta el resultado en el PR y **falla si algún métrico baja del umbral** (`coverage-threshold`, default 80%) |
 | `code-quality` | Código duplicado (`jscpd`), dependencias/exports sin uso (`knip`), cobertura de tipos (`type-coverage`) |
 | `validate-tag` | Bloquea el merge si el tag `v<version>` de `package.json` ya existe |
+| `no-ai-artifacts` | Bloquea el merge si el PR agrega archivos de configuración de IA (`.claude/`, `AGENTS.md`, `.claudeignore`, `.cursor/`, etc.) |
 
 ## Workflows reutilizables (`workflow_call`)
 
