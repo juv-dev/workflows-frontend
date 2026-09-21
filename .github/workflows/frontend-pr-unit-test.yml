@@ -9,6 +9,9 @@ on:
       coverage-path:
         type: string
         default: 'coverage/'
+      coverage-threshold:
+        type: string
+        default: '80'
 
 permissions:
   contents: read
@@ -36,6 +39,26 @@ jobs:
 
       - name: Run tests with coverage
         run: pnpm run test:coverage
+
+      - name: Enforce coverage threshold
+        env:
+          THRESHOLD: ${{ inputs.coverage-threshold }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const threshold = Number(process.env.THRESHOLD);
+            const summary = JSON.parse(fs.readFileSync("coverage/coverage-summary.json", "utf8"));
+            const t = summary.total;
+            const metrics = ["lines", "functions", "branches", "statements"];
+            const failed = metrics.filter((m) => t[m].pct < threshold);
+            if (failed.length > 0) {
+              for (const m of failed) {
+                console.error(`::error::Coverage for ${m} is ${t[m].pct}%, below the required ${threshold}%`);
+              }
+              process.exit(1);
+            }
+            console.log(`Coverage OK: all metrics >= ${threshold}%`);
+          '
 
       - name: Upload coverage artifact
         if: always()
