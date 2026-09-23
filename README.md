@@ -78,7 +78,7 @@ jobs:
 | `supply-chain` | `pnpm audit`, credenciales en `.npmrc`, flags de hardening en `pnpm-workspace.yaml` |
 | `load-values` | Expone `version`/`name` de `package.json` como outputs |
 | `unit-test` | Corre tests con cobertura, comenta el resultado en el PR y **falla si algún métrico baja del umbral** (`coverage-threshold`, default 80%) |
-| `code-quality` | Código duplicado (`jscpd`), dependencias/exports sin uso (`knip`), cobertura de tipos (`type-coverage`) |
+| `code-quality` | Código duplicado (`jscpd`), dependencias/exports sin uso (`knip`), cobertura de tipos (`type-coverage`, instalado en un directorio temporal junto al `typescript` exacto del proyecto, en vez de `npx` directo, para no resolver el tag `latest` de `typescript` que puede traer una major incompatible como TypeScript 7) |
 | `validate-tag` | Bloquea el merge si el tag `v<version>` de `package.json` ya existe |
 | `no-ai-artifacts` | Bloquea el merge si el PR agrega archivos de configuración de IA (`.claude/`, `AGENTS.md`, `.claudeignore`, `.cursor/`, etc.) |
 

@@ -18,6 +18,10 @@ inputs:
     description: 'Minimum percentage of typed code required'
     required: false
     default: '95'
+  type-coverage-version:
+    description: 'Exact type-coverage version to run (pinned separately from the project TypeScript version)'
+    required: false
+    default: '2.30.1'
 
 runs:
   using: composite
@@ -51,4 +55,15 @@ runs:
 
     - name: Check type coverage
       shell: bash
-      run: npx type-coverage --at-least ${{ inputs.type-coverage-min }} --strict
+      env:
+        TYPE_COVERAGE_VERSION: ${{ inputs.type-coverage-version }}
+      run: |
+        TS_VERSION=$(node -p "require('./package.json').devDependencies?.typescript || require('./package.json').dependencies?.typescript" | sed -E 's/^[~^]//')
+        if [ -z "$TS_VERSION" ] || [ "$TS_VERSION" = "undefined" ]; then
+          echo "::error::No typescript dependency found in package.json; type-coverage requires one."
+          exit 1
+        fi
+        echo "Installing type-coverage@$TYPE_COVERAGE_VERSION pinned to typescript@$TS_VERSION (not the npm 'latest' tag)"
+        TOOL_DIR=$(mktemp -d)
+        (cd "$TOOL_DIR" && npm init -y >/dev/null 2>&1 && npm install --no-audit --no-fund --save-exact "typescript@$TS_VERSION" "type-coverage@$TYPE_COVERAGE_VERSION" >/dev/null 2>&1)
+        bash "$TOOL_DIR/node_modules/.bin/type-coverage" --at-least ${{ inputs.type-coverage-min }} --strict
